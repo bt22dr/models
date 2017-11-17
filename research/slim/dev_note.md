@@ -5,6 +5,7 @@
 
 # Training
 ## Step 1 Fine-tuning
+```
 WORK_DIR=~/Documents/visual_search_slim
 RSC_DIR=~/Documents
 LOG_DIR=${RSC_DIR}/log
@@ -30,6 +31,6 @@ python train_image_classifier.py \
 --moving_average_decay=0.999 \
 --checkpoint_exclude_scopes=aux_11/aux_logits/FC,final_layer/FC \
 --trainable_scopes=aux_11/aux_logits/FC,final_layer/FC
-
+```
 
 ## Step 2 End-to-End Learning
