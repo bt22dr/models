@@ -3,13 +3,14 @@
  - 2706584 train set
  -   70000 valid set
 
-# Training
-## Step 1 Fine-tuning
+# Step 1 Fine-tuning
+## Training
 ```
 WORK_DIR=~/Documents/visual_search_slim
 RSC_DIR=~/Documents
 LOG_DIR=${RSC_DIR}/log
 TRAIN_DIR=${LOG_DIR}/cdiscount/train
+EVAL_DIR=${LOG_DIR}/cdiscount/eval
 DATA_DIR=${RSC_DIR}/data/cdiscount
 DATA_NAME=cdiscount_0_2K
 CKPT_DIR=${RSC_DIR}/checkpoints/nasnet-a_large_04_10_2017
@@ -33,4 +34,24 @@ python train_image_classifier.py \
 --trainable_scopes=aux_11/aux_logits/FC,final_layer/FC
 ```
 
-## Step 2 End-to-End Learning
+## Evaluation
+```
+CUDA_VISIBLE_DEVICES='' python eval_image_classifier_loop.py \
+ --alsologtostderr \
+ --checkpoint_path=${TRAIN_DIR} \
+ --dataset_dir=${DATA_DIR} \
+ --eval_dir=${EVAL_DIR} \
+ --dataset_name=${DATA_NAME} \
+ --dataset_split_name=validation \
+ --max_num_batches=180 \
+ --batch_size=8 \
+ --eval_interval_secs=3600 \
+ --model_name=nasnet_large
+```
+
+## Tensorboard
+```
+tensorboard --logdir=$LOG_DIR --port=6008
+```
+
+# Step 2 End-to-End Learning
