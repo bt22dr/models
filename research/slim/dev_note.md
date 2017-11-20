@@ -28,8 +28,15 @@ python train_image_classifier.py \
 --model_name=nasnet_large \
 --checkpoint_path=${CKPT_PATH} \
 --preprocessing_name=inception \
---clone_on_cpu=True \
---moving_average_decay=0.999 \
+--optimizer=rmsprop \
+--learning_rate=0.01 \
+--batch_size=64 \
+--num_readers=8 \
+--num_preprocessing_threads=8 \
+--max_number_of_steps=100000 \
+--log_every_n_steps=50 \
+--save_interval_secs=3600 \
+--save_summaries_secs=3600 \
 --checkpoint_exclude_scopes=aux_11/aux_logits/FC,final_layer/FC \
 --trainable_scopes=aux_11/aux_logits/FC,final_layer/FC
 ```
@@ -45,7 +52,7 @@ CUDA_VISIBLE_DEVICES='' python eval_image_classifier_loop.py \
  --dataset_split_name=validation \
  --max_num_batches=180 \
  --batch_size=8 \
- --eval_interval_secs=3600 \
+ --eval_interval_secs=7200 \
  --model_name=nasnet_large
 ```
 
@@ -55,3 +62,47 @@ tensorboard --logdir=$LOG_DIR --port=6008
 ```
 
 # Step 2 End-to-End Learning
+## Training
+```
+$ python train_image_classifier.py \
+ --train_dir=${TRAIN_DIR}/e2e \
+ --dataset_dir=${DATA_DIR} \
+ --dataset_name=${DATA_NAME} \
+ --dataset_split_name=train \
+ --model_name=nasnet_large \
+ --checkpoint_path=${TRAIN_DIR} \
+ --preprocessing_name=inception \
+ --max_number_of_steps=5000000 \
+ --batch_size=8 \
+ --optimizer=rmsprop \
+ --learning_rate=0.001 \
+ --end_learning_rate=0.000001 \
+ --learning_rate_decay_type=exponential \
+ --num_readers=7 \
+ --num_preprocessing_threads=7 \
+ --save_interval_secs=7200 \
+ --save_summaries_secs=3600 \
+ --log_every_n_steps=100 
+```
+
+## Evaluation
+```
+$ CUDA_VISIBLE_DEVICES='' python eval_image_classifier_loop.py \
+ --alsologtostderr \
+ --dataset_dir=${DATA_DIR} \
+ --eval_dir=${EVAL_DIR}/e2e \
+ --dataset_name=${DATA_NAME} \
+ --dataset_split_name=validation \
+ --checkpoint_path=${TRAIN_DIR}/e2e \
+ --max_num_batches=180 \
+ --batch_size=8 \
+ --eval_interval_secs=7200 \
+ --model_name=nasnet_large
+```
+
+
+
+
+
+
+
