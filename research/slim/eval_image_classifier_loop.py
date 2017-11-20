@@ -112,7 +112,7 @@ def main(_):
     ##############################################################
     provider = slim.dataset_data_provider.DatasetDataProvider(
         dataset,
-        shuffle=False,
+        shuffle=True,
         common_queue_capacity=2 * FLAGS.batch_size,
         common_queue_min=FLAGS.batch_size)
     [image, label] = provider.get(['image', 'label'])
