@@ -156,6 +156,7 @@ def distorted_bounding_box_crop(image,
 def preprocess_for_train(image, height, width, bbox,
                          fast_mode=True,
                          scope=None,
+                         area_range_start=0.05,
                          add_image_summaries=True):
   """Distort one image for training a network.
 
@@ -197,7 +198,7 @@ def preprocess_for_train(image, height, width, bbox,
     if add_image_summaries:
       tf.summary.image('image_with_bounding_boxes', image_with_box)
 
-    distorted_image, distorted_bbox = distorted_bounding_box_crop(image, bbox)
+    distorted_image, distorted_bbox = distorted_bounding_box_crop(image, bbox, area_range=(area_range_start, 1.0))
     # Restore the shape since the dynamic slice based upon the bbox_size loses
     # the third dimension.
     distorted_image.set_shape([None, None, 3])
@@ -285,6 +286,7 @@ def preprocess_image(image, height, width,
                      is_training=False,
                      bbox=None,
                      fast_mode=True,
+                     area_range_start=0.05,
                      add_image_summaries=True):
   """Pre-process one image for training or evaluation.
 
@@ -311,7 +313,7 @@ def preprocess_image(image, height, width,
     ValueError: if user does not provide bounding box
   """
   if is_training:
-    return preprocess_for_train(image, height, width, bbox, fast_mode,
+    return preprocess_for_train(image, height, width, bbox, fast_mode, area_range_start=area_range_start,
                                 add_image_summaries=add_image_summaries)
   else:
     return preprocess_for_eval(image, height, width)

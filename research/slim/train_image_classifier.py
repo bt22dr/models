@@ -217,6 +217,9 @@ tf.app.flags.DEFINE_boolean(
     'ignore_missing_vars', False,
     'When restoring a checkpoint would ignore missing variables.')
 
+tf.app.flags.DEFINE_float(
+    'area_range_start', 0.05, 'area_range in preprocessing would be (area_range_start, 1.0).')
+
 FLAGS = tf.app.flags.FLAGS
 
 
@@ -436,7 +439,7 @@ def main(_):
 
       train_image_size = FLAGS.train_image_size or network_fn.default_image_size
 
-      image = image_preprocessing_fn(image, train_image_size, train_image_size)
+      image = image_preprocessing_fn(image, train_image_size, train_image_size, area_range_start=FLAGS.area_range_start)
 
       images, labels = tf.train.batch(
           [image, label],
