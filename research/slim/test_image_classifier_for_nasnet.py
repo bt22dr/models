@@ -37,40 +37,50 @@ if __name__ == "__main__":
     "/home/jysong/Documents/log/cdiscount/train_e2e_lr0.01"
   input_height = 224
   input_width = 224
+  batch_size = 32
 
   parser = argparse.ArgumentParser()
   parser.add_argument("--dataset_dir", help="image dataset directory to be processed")
-  parser.add_argument("--ckpt", help="graph/model to be executed")
-  parser.add_argument("--input_height", type=int, help="input height")
+  parser.add_argument("--ckpt_path", help="graph/model to be executed")
+  parser.add_argument("--batch_size", type=int, help="batch size")
   parser.add_argument("--input_width", type=int, help="input width")
+  parser.add_argument("--input_mean", type=int, help="input mean")
   args = parser.parse_args()
 
-  if args.ckpt:
-    ckpt_path = args.ckpt
+  if args.ckpt_path:
+    ckpt_path = args.ckpt_path
   if args.dataset_dir:
-    dataset_dir = args.image_dataset
+    dataset_dir = args.dataset_dir
+  if args.batch_size:
+    batch_size = args.batch_size
   if args.input_height:
     input_height = args.input_height
   if args.input_width:
     input_width = args.input_width
 
-  file_names = glob.glob(os.path.join(dataset_dir, 'cdiscount_images/*-0.jpg'))
-  #file_name = file_names[0]
-
   labels_to_names = None
   if dataset_utils.has_labels(dataset_dir):
     labels_to_names = dataset_utils.read_label_file(dataset_dir)
+
+  file_names = glob.glob(os.path.join(dataset_dir, 'cdiscount_images/*-0.jpg'))
+  num_total_images = len(file_names)
 
   graph = tf.Graph()
   with graph.as_default():
     network_fn = nets_factory.get_network_fn('nasnet_mobile', num_classes=5270, is_training=False)
 
-    file_name = tf.placeholder(tf.string)
-    file_reader = tf.read_file(file_name)
+    file_names = tf.convert_to_tensor(file_names)
+    file_name = tf.train.slice_input_producer([file_names], num_epochs=1, shuffle=False)
+
+    file_reader = tf.read_file(file_name[0])
     image = tf.image.decode_jpeg(file_reader, channels=3)
     image_preprocessing_fn = preprocessing_factory.get_preprocessing('nasnet_mobile', is_training=False)
     processed_image = image_preprocessing_fn(image, input_height, input_width)
-    images = tf.expand_dims(processed_image, 0)
+
+    images, image_names = tf.train.batch(
+        [processed_image, file_name], 
+        batch_size=batch_size, 
+        allow_smaller_final_batch=True)
 
     logits, end_points = network_fn(images)
 
@@ -84,11 +94,22 @@ if __name__ == "__main__":
     tf.logging.info('Evaluating %s' % ckpt_path)
     init_fn = slim.assign_from_checkpoint_fn(ckpt_path, variables_to_restore, ignore_missing_vars=True) # TODO::
 
-    print("_id,category_id")
+    num_iter = int(np.ceil(num_total_images / float(batch_size)))
     with tf.Session() as sess:
+      sess.run(tf.local_variables_initializer())
+      #sess.run(tf.global_variables_initializer())
       init_fn(sess)
-      for f in file_names:
-        pred = sess.run([prediction], feed_dict={file_name: f})
-        pred = np.squeeze(pred)
-        inds = np.argmax(pred)
-        print(os.path.basename(f).split('-')[0], labels_to_names[inds], sep=',')
+      coord = tf.train.Coordinator()
+      threads = tf.train.start_queue_runners(coord=coord)
+
+      print("_id,category_id")
+      for iter in range(num_iter):
+        preds, names = sess.run([prediction, image_names])
+        inds = np.argmax(preds, axis=1)
+
+        for i, ind in enumerate(inds):
+          product_id = os.path.basename(names[i][0]).decode().split('-')[0]
+          print(product_id, labels_to_names[ind], sep=',')
+      coord.request_stop()
+      coord.join(threads)
+
