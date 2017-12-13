@@ -33,14 +33,16 @@ slim = tf.contrib.slim
 
 if __name__ == "__main__":
   dataset_dir = "/home/jysong/Documents/data/cdiscount/cdiscount_test_images"
+  model_name = 'nasnet_mobile'
   ckpt_path = \
     "/home/jysong/Documents/log/cdiscount/train_e2e_lr0.01"
   input_height = 224
   input_width = 224
-  batch_size = 32
+  batch_size = 256
 
   parser = argparse.ArgumentParser()
   parser.add_argument("--dataset_dir", help="image dataset directory to be processed")
+  parser.add_argument("--model_name", help="model name (ex. nasnet_mobile, inception_resnet_v2, ...")
   parser.add_argument("--ckpt_path", help="graph/model to be executed")
   parser.add_argument("--batch_size", type=int, help="batch size")
   parser.add_argument("--input_width", type=int, help="input width")
@@ -49,6 +51,8 @@ if __name__ == "__main__":
 
   if args.ckpt_path:
     ckpt_path = args.ckpt_path
+  if args.model_name:
+    model_name = args.model_name
   if args.dataset_dir:
     dataset_dir = args.dataset_dir
   if args.batch_size:
@@ -65,14 +69,14 @@ if __name__ == "__main__":
   file_names = glob.glob(os.path.join(dataset_dir, 'cdiscount_images/*-0.jpg'))
   num_total_images = len(file_names)
 
-  network_fn = nets_factory.get_network_fn('nasnet_mobile', num_classes=5270, is_training=False)
+  network_fn = nets_factory.get_network_fn(model_name, num_classes=5270, is_training=False)
 
   file_names = tf.convert_to_tensor(file_names)
   file_name = tf.train.slice_input_producer([file_names], num_epochs=1, shuffle=False)
 
   file_reader = tf.read_file(file_name[0])
   image = tf.image.decode_jpeg(file_reader, channels=3)
-  image_preprocessing_fn = preprocessing_factory.get_preprocessing('nasnet_mobile', is_training=False)
+  image_preprocessing_fn = preprocessing_factory.get_preprocessing('inception', is_training=False)
   processed_image = image_preprocessing_fn(image, input_height, input_width)
 
   images, image_names = tf.train.batch(
