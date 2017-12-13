@@ -44,7 +44,7 @@ if __name__ == "__main__":
   parser.add_argument("--ckpt_path", help="graph/model to be executed")
   parser.add_argument("--batch_size", type=int, help="batch size")
   parser.add_argument("--input_width", type=int, help="input width")
-  parser.add_argument("--input_mean", type=int, help="input mean")
+  parser.add_argument("--input_height", type=int, help="input height")
   args = parser.parse_args()
 
   if args.ckpt_path:
@@ -65,51 +65,49 @@ if __name__ == "__main__":
   file_names = glob.glob(os.path.join(dataset_dir, 'cdiscount_images/*-0.jpg'))
   num_total_images = len(file_names)
 
-  graph = tf.Graph()
-  with graph.as_default():
-    network_fn = nets_factory.get_network_fn('nasnet_mobile', num_classes=5270, is_training=False)
+  network_fn = nets_factory.get_network_fn('nasnet_mobile', num_classes=5270, is_training=False)
 
-    file_names = tf.convert_to_tensor(file_names)
-    file_name = tf.train.slice_input_producer([file_names], num_epochs=1, shuffle=False)
+  file_names = tf.convert_to_tensor(file_names)
+  file_name = tf.train.slice_input_producer([file_names], num_epochs=1, shuffle=False)
 
-    file_reader = tf.read_file(file_name[0])
-    image = tf.image.decode_jpeg(file_reader, channels=3)
-    image_preprocessing_fn = preprocessing_factory.get_preprocessing('nasnet_mobile', is_training=False)
-    processed_image = image_preprocessing_fn(image, input_height, input_width)
+  file_reader = tf.read_file(file_name[0])
+  image = tf.image.decode_jpeg(file_reader, channels=3)
+  image_preprocessing_fn = preprocessing_factory.get_preprocessing('nasnet_mobile', is_training=False)
+  processed_image = image_preprocessing_fn(image, input_height, input_width)
 
-    images, image_names = tf.train.batch(
-        [processed_image, file_name], 
-        batch_size=batch_size, 
-        allow_smaller_final_batch=True)
+  images, image_names = tf.train.batch(
+      [processed_image, file_name], 
+      batch_size=batch_size, 
+      allow_smaller_final_batch=True)
 
-    logits, end_points = network_fn(images)
+  logits, end_points = network_fn(images)
 
-    variables_to_restore = slim.get_variables_to_restore()
+  variables_to_restore = slim.get_variables_to_restore()
 
-    prediction = end_points['Predictions']
+  prediction = end_points['Predictions']
 
-    if tf.gfile.IsDirectory(ckpt_path):
-      ckpt_path = tf.train.latest_checkpoint(ckpt_path)
+  if tf.gfile.IsDirectory(ckpt_path):
+    ckpt_path = tf.train.latest_checkpoint(ckpt_path)
 
-    tf.logging.info('Evaluating %s' % ckpt_path)
-    init_fn = slim.assign_from_checkpoint_fn(ckpt_path, variables_to_restore, ignore_missing_vars=True) # TODO::
+  tf.logging.info('Evaluating %s' % ckpt_path)
+  init_fn = slim.assign_from_checkpoint_fn(ckpt_path, variables_to_restore, ignore_missing_vars=True) # TODO::
 
-    num_iter = int(np.ceil(num_total_images / float(batch_size)))
-    with tf.Session() as sess:
-      sess.run(tf.local_variables_initializer())
-      #sess.run(tf.global_variables_initializer())
-      init_fn(sess)
-      coord = tf.train.Coordinator()
-      threads = tf.train.start_queue_runners(coord=coord)
+  num_iter = int(np.ceil(num_total_images / float(batch_size)))
+  with tf.Session() as sess:
+    sess.run(tf.local_variables_initializer())
+    #sess.run(tf.global_variables_initializer())
+    init_fn(sess)
+    coord = tf.train.Coordinator()
+    threads = tf.train.start_queue_runners(coord=coord)
 
-      print("_id,category_id")
-      for iter in range(num_iter):
-        preds, names = sess.run([prediction, image_names])
-        inds = np.argmax(preds, axis=1)
+    print("_id,category_id")
+    for iter in range(num_iter):
+      preds, names = sess.run([prediction, image_names])
+      inds = np.argmax(preds, axis=1)
 
-        for i, ind in enumerate(inds):
-          product_id = os.path.basename(names[i][0]).decode().split('-')[0]
-          print(product_id, labels_to_names[ind], sep=',')
-      coord.request_stop()
-      coord.join(threads)
+      for i, ind in enumerate(inds):
+        product_id = os.path.basename(names[i][0]).decode().split('-')[0]
+        print(product_id, labels_to_names[ind], sep=',')
+    coord.request_stop()
+    coord.join(threads)
 
