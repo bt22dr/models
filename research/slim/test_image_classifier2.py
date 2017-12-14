@@ -32,6 +32,16 @@ from preprocessing import preprocessing_factory
 
 slim = tf.contrib.slim
 
+def _parse_function(filename):
+  image_size = 180 # TODO: 
+  file_reader = tf.read_file(filename)
+  image = tf.image.decode_jpeg(file_reader, channels=3)
+
+  image_preprocessing_fn = preprocessing_factory.get_preprocessing('inception', is_training=False)
+  processed_image = image_preprocessing_fn(image, image_size, image_size)
+
+  return processed_image, filename
+ 
 if __name__ == "__main__":
   dataset_dir = "/home/jysong/Documents/data/cdiscount/cdiscount_test_images"
   model_name = 'nasnet_mobile'
@@ -66,21 +76,17 @@ if __name__ == "__main__":
   num_total_images = len(file_names)
 
   network_fn = nets_factory.get_network_fn(model_name, num_classes=5270, is_training=False)
+  image_size = args.image_size or network_fn.default_image_size
 
   file_names = tf.convert_to_tensor(file_names)
-  file_name = tf.train.slice_input_producer([file_names], num_epochs=1, shuffle=False)
+  dataset = tf.data.Dataset.from_tensor_slices(file_names)
+  dataset = dataset.map(_parse_function, num_parallel_calls=6)
+  dataset = dataset.batch(batch_size)
+  
+  iterator = dataset.make_one_shot_iterator()
+  next_batch = iterator.get_next()
 
-  file_reader = tf.read_file(file_name[0])
-  image = tf.image.decode_jpeg(file_reader, channels=3)
-  image_preprocessing_fn = preprocessing_factory.get_preprocessing('inception', is_training=False)
-
-  image_size = args.image_size or network_fn.default_image_size
-  processed_image = image_preprocessing_fn(image, image_size, image_size)
-
-  images, image_names = tf.train.batch(
-      [processed_image, file_name], 
-      batch_size=batch_size, 
-      allow_smaller_final_batch=True)
+  images = tf.placeholder(tf.float32, [None, image_size, image_size, 3])
 
   logits, end_points = network_fn(images)
 
@@ -104,15 +110,19 @@ if __name__ == "__main__":
     product_probs_dict = collections.defaultdict(lambda: 0)
 
     print("_id,category_id")
+    progress = 0
     while True:
       try:
-        preds, names = sess.run([prediction, image_names])
+        img_batch, name_batch = sess.run(next_batch)
+        preds = sess.run(prediction, feed_dict={images: img_batch})
         inds = np.argmax(preds, axis=1)
 
         for i, ind in enumerate(inds):
-          product_id = os.path.basename(names[i][0]).decode().split('-')[0]
+          product_id = os.path.basename(name_batch[i]).decode().split('-')[0]
           #print(product_id, labels_to_names[ind], sep=',')
           product_probs_dict[product_id] += preds[i]
+          progress += 1
+        sys.stderr.write("\r[{}]".format(progress))
       except tf.errors.OutOfRangeError:
         break
 
