@@ -1,10 +1,10 @@
-# Copyright 2016 The TensorFlow Authors. All Rights Reserved.
+# Copyright 2017 The TensorFlow Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-# http://www.apache.org/licenses/LICENSE-2.0
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,179 +12,122 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""Generic evaluation script that evaluates a model using a given dataset."""
 
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import argparse
+import glob
+import sys
 import os
-import math
+import collections
+
 import numpy as np
 import tensorflow as tf
-import glob
 
 from datasets import dataset_utils
-from datasets import dataset_factory
 from nets import nets_factory
 from preprocessing import preprocessing_factory
 
 slim = tf.contrib.slim
 
-tf.app.flags.DEFINE_integer(
-    'batch_size', 8, 'The number of samples in each batch.')
+def _parse_function(filename):
+  image_size = 180 # TODO: 
+  file_reader = tf.read_file(filename)
+  image = tf.image.decode_jpeg(file_reader, channels=3)
 
-tf.app.flags.DEFINE_integer(
-    'max_num_batches', None,
-    'Max number of batches to evaluate by default use all.')
+  image_preprocessing_fn = preprocessing_factory.get_preprocessing('inception', is_training=False)
+  processed_image = image_preprocessing_fn(image, image_size, image_size)
 
-tf.app.flags.DEFINE_string(
-    'master', '', 'The address of the TensorFlow master to use.')
+  return processed_image, filename
+ 
+if __name__ == "__main__":
+  dataset_dir = "/home/jysong/Documents/data/cdiscount/cdiscount_test_images"
+  model_name = 'nasnet_mobile'
+  ckpt_path = \
+    "/home/jysong/Documents/log/cdiscount/train_e2e_lr0.01"
+  batch_size = 128
+  image_size = 224
 
-tf.app.flags.DEFINE_string(
-    'checkpoint_path', '/tmp/tfmodel/',
-    'The directory where the model was written to or an absolute path to a '
-    'checkpoint file.')
+  parser = argparse.ArgumentParser()
+  parser.add_argument("--dataset_dir", help="image dataset directory to be processed")
+  parser.add_argument("--model_name", help="model name (ex. nasnet_mobile, inception_resnet_v2, ...")
+  parser.add_argument("--ckpt_path", help="graph/model to be executed")
+  parser.add_argument("--batch_size", type=int, help="batch size")
+  parser.add_argument("--image_size", type=int, help="image width, height")
+  args = parser.parse_args()
 
-tf.app.flags.DEFINE_string(
-    'eval_dir', '/tmp/tfmodel/', 'Directory where the results are saved to.')
+  if args.ckpt_path:
+    ckpt_path = args.ckpt_path
+  if args.model_name:
+    model_name = args.model_name
+  if args.dataset_dir:
+    dataset_dir = args.dataset_dir
+  if args.batch_size:
+    batch_size = args.batch_size
 
-tf.app.flags.DEFINE_integer(
-    'num_preprocessing_threads', 4,
-    'The number of threads used to create the batches.')
+  labels_to_names = None
+  if dataset_utils.has_labels(dataset_dir):
+    labels_to_names = dataset_utils.read_label_file(dataset_dir)
 
-tf.app.flags.DEFINE_string(
-    'dataset_name', 'imagenet', 'The name of the dataset to load.')
+  file_names = glob.glob(os.path.join(dataset_dir, 'cdiscount_images/*.jpg'))
+  #file_names = file_names[:10]
+  num_total_images = len(file_names)
 
-tf.app.flags.DEFINE_string(
-    'dataset_split_name', 'test', 'The name of the train/test split.')
+  network_fn = nets_factory.get_network_fn(model_name, num_classes=5270, is_training=False)
+  image_size = args.image_size or network_fn.default_image_size
 
-tf.app.flags.DEFINE_string(
-    'dataset_dir', None, 'The directory where the dataset files are stored.')
+  file_names = tf.convert_to_tensor(file_names)
+  dataset = tf.data.Dataset.from_tensor_slices(file_names)
+  dataset = dataset.map(_parse_function, num_parallel_calls=6)
+  dataset = dataset.batch(batch_size)
+  
+  iterator = dataset.make_one_shot_iterator()
+  next_batch = iterator.get_next()
 
-tf.app.flags.DEFINE_integer(
-    'labels_offset', 0,
-    'An offset for the labels in the dataset. This flag is primarily used to '
-    'evaluate the VGG and ResNet architectures which do not use a background '
-    'class for the ImageNet dataset.')
+  images = tf.placeholder(tf.float32, [None, image_size, image_size, 3])
 
-tf.app.flags.DEFINE_string(
-    'model_name', 'inception_resnet_v2', 'The name of the architecture to evaluate.')
+  logits, end_points = network_fn(images)
 
-tf.app.flags.DEFINE_string(
-    'preprocessing_name', None, 'The name of the preprocessing to use. If left '
-    'as `None`, then the model_name flag is used.')
+  variables_to_restore = slim.get_variables_to_restore()
 
-tf.app.flags.DEFINE_float(
-    'moving_average_decay', None,
-    'The decay to use for the moving average.'
-    'If left as None, then moving averages are not used.')
+  prediction = end_points['Predictions']
 
-tf.app.flags.DEFINE_integer(
-    'eval_image_size', 180, 'Eval image size')
+  if tf.gfile.IsDirectory(ckpt_path):
+    ckpt_path = tf.train.latest_checkpoint(ckpt_path)
 
-tf.app.flags.DEFINE_integer(
-    'num_classes', 5270, 'Eval image size')
+  tf.logging.info('Evaluating %s' % ckpt_path)
+  init_fn = slim.assign_from_checkpoint_fn(ckpt_path, variables_to_restore, ignore_missing_vars=True) # TODO::
 
-FLAGS = tf.app.flags.FLAGS
+  with tf.Session() as sess:
+    sess.run(tf.local_variables_initializer())
+    #sess.run(tf.global_variables_initializer())
+    init_fn(sess)
+    coord = tf.train.Coordinator()
+    threads = tf.train.start_queue_runners(coord=coord)
 
+    product_probs_dict = collections.defaultdict(lambda: 0)
 
-def main(_):
-#  if not FLAGS.dataset_dir:
-#    raise ValueError('You must supply the dataset directory with --dataset_dir')
+    print("_id,category_id")
+    progress = 0
+    while True:
+      try:
+        img_batch, name_batch = sess.run(next_batch)
+        preds = sess.run(prediction, feed_dict={images: img_batch})
+        inds = np.argmax(preds, axis=1)
 
-    labels_to_names = None
-    if dataset_utils.has_labels(FLAGS.dataset_dir):
-        labels_to_names = dataset_utils.read_label_file(FLAGS.dataset_dir)
-    tf.logging.set_verbosity(tf.logging.INFO)
-    with tf.Graph().as_default():
-        tf_global_step = slim.get_or_create_global_step()
-        filenames = glob.glob(os.path.join(FLAGS.dataset_dir, 'cdiscount_images/*-0.jpg'))
-        filename_queue = tf.train.string_input_producer(filenames)
+        for i, ind in enumerate(inds):
+          product_id = os.path.basename(name_batch[i]).decode().split('-')[0]
+          #print(product_id, labels_to_names[ind], sep=',')
+          product_probs_dict[product_id] += preds[i]
+          progress += 1
+        sys.stderr.write("\r[{}]".format(progress))
+      except tf.errors.OutOfRangeError:
+        break
 
-        reader = tf.WholeFileReader()
-        key, value = reader.read(filename_queue)
+    coord.request_stop()
+    coord.join(threads)
 
-        # image = tf.image.decode_jpeg(value)
-        image = tf.image.decode_jpeg(value, channels=3)
-
-        ####################
-        # Select the model #
-        ####################
-        network_fn = nets_factory.get_network_fn(
-            FLAGS.model_name,
-            num_classes=(FLAGS.num_classes - FLAGS.labels_offset),
-            is_training=False)
-
-
-        #####################################
-        # Select the preprocessing function #
-        #####################################
-        preprocessing_name = FLAGS.preprocessing_name or FLAGS.model_name
-        image_preprocessing_fn = preprocessing_factory.get_preprocessing(
-            preprocessing_name,
-            is_training=False)
-
-        eval_image_size = FLAGS.eval_image_size or network_fn.default_image_size
-
-        image = image_preprocessing_fn(image, eval_image_size, eval_image_size)
-        
-        images = tf.train.batch(
-            [image],
-            batch_size=FLAGS.batch_size,
-            num_threads=FLAGS.num_preprocessing_threads,
-            capacity=5 * FLAGS.batch_size)
-
-        ####################
-        # Define the model #
-        ####################
-        logits, end_points = network_fn(images)
-
-        if FLAGS.moving_average_decay:
-          variable_averages = tf.train.ExponentialMovingAverage(
-              FLAGS.moving_average_decay, tf_global_step)
-          variables_to_restore = variable_averages.variables_to_restore(
-              slim.get_model_variables())
-          variables_to_restore[tf_global_step.op.name] = tf_global_step
-        else:
-          variables_to_restore = slim.get_variables_to_restore()
-
-        prediction = end_points['Predictions']
-
-
-        if tf.gfile.IsDirectory(FLAGS.checkpoint_path):
-          checkpoint_path = tf.train.latest_checkpoint(FLAGS.checkpoint_path)
-        else:
-          checkpoint_path = FLAGS.checkpoint_path
-
-        tf.logging.info('Evaluating %s' % checkpoint_path)
-
-        #init_fn = slim.assign_from_checkpoint_fn(
-        #'test_res/inception_resnet_v2_2016_08_30.ckpt', slim.get_model_variables('InceptionResnetV2'))
-        init_fn = slim.assign_from_checkpoint_fn(checkpoint_path, slim.get_model_variables('InceptionResnetV2'))
-
-        with tf.Session() as sess:
-            init_fn(sess)
-            coord = tf.train.Coordinator()
-            threads = tf.train.start_queue_runners(coord=coord)
-
-            num_batches = math.ceil(len(filenames) / float(FLAGS.batch_size))
-            print('_id,category_id')
-            for i in range(num_batches):
-                pred = sess.run([prediction])[0]
-                
-                inds = np.argmax(pred,axis=1)
-                #if i == (num_batches-1):
-                #    inds = inds[:(len(filenames)%FLAGS.batch_size)]
-                for ii, ind in enumerate(inds):
-                    filename_idx = ((i*FLAGS.batch_size)+ii) % len(filenames)
-                    if ((i*FLAGS.batch_size)+ii) == len(filenames):
-                        break
-                    product_id = os.path.basename(filenames[filename_idx]).split('-')[0]
-                    print(product_id, labels_to_names[ind], sep=',')
-            coord.request_stop()
-            coord.join(threads)
-            sess.close()
-
-if __name__ == '__main__':
-  tf.app.run()
+  for k,v in product_probs_dict.items():
+    print(k, labels_to_names[np.argmax(v)], sep=',')

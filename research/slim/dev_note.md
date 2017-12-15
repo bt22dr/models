@@ -31,12 +31,12 @@ python train_image_classifier.py \
 --optimizer=rmsprop \
 --learning_rate=0.01 \
 --batch_size=64 \
---num_readers=8 \
---num_preprocessing_threads=8 \
+--num_readers=7 \
+--num_preprocessing_threads=7 \
 --max_number_of_steps=100000 \
---log_every_n_steps=50 \
+--log_every_n_steps=100 \
 --save_interval_secs=3600 \
---save_summaries_secs=3600 \
+--save_summaries_secs=1800 \
 --checkpoint_exclude_scopes=aux_11/aux_logits/FC,final_layer/FC \
 --trainable_scopes=aux_11/aux_logits/FC,final_layer/FC
 ```
@@ -52,7 +52,7 @@ CUDA_VISIBLE_DEVICES='' python eval_image_classifier_loop.py \
  --dataset_split_name=validation \
  --max_num_batches=180 \
  --batch_size=8 \
- --eval_interval_secs=7200 \
+ --eval_interval_secs=3600 \
  --model_name=nasnet_large
 ```
 
@@ -75,14 +75,14 @@ $ python train_image_classifier.py \
  --max_number_of_steps=5000000 \
  --batch_size=8 \
  --optimizer=rmsprop \
- --learning_rate=0.001 \
+ --learning_rate=0.01 \
  --end_learning_rate=0.000001 \
  --learning_rate_decay_type=exponential \
  --num_readers=7 \
  --num_preprocessing_threads=7 \
  --save_interval_secs=7200 \
- --save_summaries_secs=3600 \
- --log_every_n_steps=100 
+ --save_summaries_secs=1800 \
+ --log_every_n_steps=1000 
 ```
 
 ## Evaluation
@@ -95,14 +95,8 @@ $ CUDA_VISIBLE_DEVICES='' python eval_image_classifier_loop.py \
  --dataset_split_name=validation \
  --checkpoint_path=${TRAIN_DIR}/e2e \
  --max_num_batches=180 \
- --batch_size=8 \
- --eval_interval_secs=7200 \
+ --batch_size=16 \
+ --eval_interval_secs=3600 \
  --model_name=nasnet_large
 ```
-
-
-
-
-
-
 
